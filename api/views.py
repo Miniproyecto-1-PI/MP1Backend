@@ -1,5 +1,7 @@
 from django.shortcuts import render
 from django.http import JsonResponse
+from django.utils import timezone
+from datetime import datetime
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -33,3 +35,14 @@ def subtareas_list(request, actividad_id):
             serializer.save(actividad=actividad)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+def actividades_hoy(request):
+    hoy = datetime.now().date()
+    actividades = Actividad.objects.filter(fecha_entrega=hoy).order_by('created_at')
+    serializer = ActividadSerializer(actividades, many=True)
+    return Response({
+        'count': actividades.count(),
+        'actividades': serializer.data
+    })
