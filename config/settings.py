@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-p2wev9g!4ez0f8acqm=s6#-1h3sq0zn8@agk4g5-ou15k5p%n(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['mp1backend.onrender.com', '127.0.0.1']
 
 
 STATIC_URL = 'static/'
