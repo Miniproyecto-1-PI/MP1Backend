@@ -6,13 +6,18 @@ from .models import Actividad, Subtarea
 class SubtareaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subtarea
-        fields = ['id', 'titulo', 'completada', 'orden', 'created_at']
+        fields = ['id', 'titulo', 'fecha_objetivo', 'horas_estimadas', 'completada', 'orden', 'created_at']
         read_only_fields = ['id', 'created_at']
     
     def validate_titulo(self, value):
         if not value or not value.strip():
             raise serializers.ValidationError("El título de la subtarea no puede estar vacío")
         return value.strip()
+    
+    def validate_horas_estimadas(self, value):
+        if value is None or value <= 0:
+            raise serializers.ValidationError("Las horas de la subtarea deben ser mayores a 0")
+        return value
 
 
 class ActividadSerializer(serializers.ModelSerializer):

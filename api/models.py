@@ -20,6 +20,8 @@ class Subtarea(models.Model):
         related_name='subtareas'
     )
     titulo = models.CharField(max_length=255)
+    fecha_objetivo = models.DateField(null=True, blank=True)
+    horas_estimadas = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     completada = models.BooleanField(default=False)
     orden = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
