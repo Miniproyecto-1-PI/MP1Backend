@@ -218,7 +218,7 @@ def actividades_hoy(request):
 
     Desempate: si misma fecha y mismas horas → orden por título alfabético
     """
-    hoy = datetime.now().date()
+    hoy = timezone.localdate()
     proxima_semana = hoy + timedelta(days=7)
     user = request.user
 
@@ -391,7 +391,7 @@ def carga_diaria(request):
     Devuelve la carga de horas planificadas por día para los próximos 14 días.
     Útil para mostrar al usuario qué días están más cargados.
     """
-    hoy = datetime.now().date()
+    hoy = timezone.localdate()
     fin = hoy + timedelta(days=14)
 
     perfil, _ = PerfilUsuario.objects.get_or_create(
