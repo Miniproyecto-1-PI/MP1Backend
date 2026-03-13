@@ -64,3 +64,49 @@ class ActividadSerializer(serializers.ModelSerializer):
             )
         
         return actividad
+
+    def update(self, instance, validated_data):
+        subtareas_data = validated_data.pop('subtareas', None)
+        
+        instance.titulo = validated_data.get('titulo', instance.titulo)
+        instance.descripcion = validated_data.get('descripcion', instance.descripcion)
+        instance.fecha_entrega = validated_data.get('fecha_entrega', instance.fecha_entrega)
+        instance.save()
+        
+        if subtareas_data is not None:
+            # Recreate all logic or use initial_data logic
+            # Easiest way to "update" subtasks while preserving order is to map by title
+            requests_subtareas = self.initial_data.get('subtareas', [])
+            keep_subtareas_ids = []
+            
+            for idx, s_data in enumerate(requests_subtareas):
+                subtarea_id = s_data.get('id')
+                if subtarea_id:
+                    try:
+                        subtarea = Subtarea.objects.get(id=subtarea_id, actividad=instance)
+                        subtarea.titulo = s_data.get('titulo', subtarea.titulo)
+                        if s_data.get('fecha_objetivo'):
+                            subtarea.fecha_objetivo = s_data.get('fecha_objetivo')
+                        if s_data.get('horas_estimadas'):
+                            subtarea.horas_estimadas = s_data.get('horas_estimadas')
+                        if 'completada' in s_data:
+                            subtarea.completada = s_data['completada']
+                        subtarea.orden = idx
+                        subtarea.save()
+                        keep_subtareas_ids.append(subtarea.id)
+                    except Subtarea.DoesNotExist:
+                        pass
+                else:
+                    new_subtarea = Subtarea.objects.create(
+                        actividad=instance,
+                        titulo=s_data.get('titulo', ''),
+                        fecha_objetivo=s_data.get('fecha_objetivo'),
+                        horas_estimadas=s_data.get('horas_estimadas'),
+                        completada=s_data.get('completada', False),
+                        orden=idx
+                    )
+                    keep_subtareas_ids.append(new_subtarea.id)
+            
+            Subtarea.objects.filter(actividad=instance).exclude(id__in=keep_subtareas_ids).delete()
+            
+        return instance
