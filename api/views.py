@@ -45,7 +45,6 @@ def registro_view(request):
             'message': 'Cuenta creada exitosamente',
             'user': {
                 'id': user.id,
-                'username': user.username,
                 'email': user.email,
                 'first_name': user.first_name,
                 'limite_diario_horas': float(user.perfil.limite_diario_horas),
@@ -77,7 +76,6 @@ def login_view(request):
             'message': 'Inicio de sesión exitoso',
             'user': {
                 'id': user.id,
-                'username': user.username,
                 'email': user.email,
                 'first_name': user.first_name,
                 'limite_diario_horas': float(perfil.limite_diario_horas),
@@ -101,7 +99,6 @@ def me_view(request):
     )
     return Response({
         'id': user.id,
-        'username': user.username,
         'email': user.email,
         'first_name': user.first_name,
         'limite_diario_horas': float(perfil.limite_diario_horas),
@@ -269,6 +266,16 @@ def actividades_hoy(request):
     ).prefetch_related('subtareas')
     actividades_serializer = ActividadSerializer(actividades_hoy_qs, many=True)
 
+    # Novedad: Actividades que no tienen ninguna subtarea planificada
+    # Para que el usuario las pueda ver y gestionar, independientemente de su fecha_entrega.
+    actividades_sin_planificar_qs = Actividad.objects.filter(
+        usuario=user,
+        subtareas__isnull=True
+    ).exclude(
+        fecha_entrega=hoy # excluir las que ya salen en actividades_hoy
+    )
+    actividades_sin_planificar_serializer = ActividadSerializer(actividades_sin_planificar_qs, many=True)
+
     # Horas totales planificadas hoy
     horas_hoy = de_hoy.aggregate(
         total=Sum('horas_estimadas')
@@ -281,6 +288,7 @@ def actividades_hoy(request):
         'hoy': [serialize_subtarea_con_actividad(s) for s in de_hoy],
         'proximas': [serialize_subtarea_con_actividad(s) for s in proximas],
         'actividades_hoy': actividades_serializer.data,
+        'actividades_sin_planificar': actividades_sin_planificar_serializer.data,
     })
 
 

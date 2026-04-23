@@ -18,7 +18,7 @@ class PerfilUsuario(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Perfil de {self.usuario.username}"
+        return f"Perfil de {self.usuario.email}"
 
 
 TIPO_ACTIVIDAD_CHOICES = [

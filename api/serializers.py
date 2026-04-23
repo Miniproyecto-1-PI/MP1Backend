@@ -16,14 +16,7 @@ class RegistroSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'password_confirm', 'first_name']
-
-    def validate_username(self, value):
-        if not value or not value.strip():
-            raise serializers.ValidationError("El nombre de usuario es requerido")
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("Este nombre de usuario ya está en uso")
-        return value.strip()
+        fields = ['email', 'password', 'password_confirm', 'first_name']
 
     def validate_email(self, value):
         if not value or not value.strip():
@@ -41,9 +34,10 @@ class RegistroSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('password_confirm')
+        email = validated_data.get('email', '')
         user = User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data.get('email', ''),
+            username=email,
+            email=email,
             password=validated_data['password'],
             first_name=validated_data.get('first_name', ''),
         )
@@ -54,12 +48,12 @@ class RegistroSerializer(serializers.ModelSerializer):
 
 class LoginSerializer(serializers.Serializer):
     """Serializer para login — no revela si el usuario existe."""
-    username = serializers.CharField()
+    email = serializers.EmailField()
     password = serializers.CharField()
 
     def validate(self, data):
         user = authenticate(
-            username=data.get('username'),
+            username=data.get('email'),
             password=data.get('password')
         )
         if not user:
@@ -86,8 +80,8 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'limite_diario_horas']
-        read_only_fields = ['id', 'username', 'email', 'first_name']
+        fields = ['id', 'email', 'first_name', 'limite_diario_horas']
+        read_only_fields = ['id', 'email', 'first_name']
 
 
 class PerfilUsuarioSerializer(serializers.ModelSerializer):
