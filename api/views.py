@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from .models import Actividad, Subtarea, PerfilUsuario
 from .serializers import (
@@ -127,10 +127,33 @@ def me_view(request):
 @extend_schema(
     request=PerfilUsuarioSerializer,
     responses={
-        200: OpenApiResponse(description='Perfil actualizado'),
-        400: OpenApiResponse(description='Datos inválidos'),
+        200: OpenApiResponse(
+            description='Perfil actualizado exitosamente',
+        ),
+        400: OpenApiResponse(
+            description='Datos inválidos - el límite debe estar entre 1 y 16 horas',
+        ),
     },
-    description='Actualizar configuración del perfil (ej: límite diario de horas).'
+    description='''
+## Actualizar Perfil de Usuario
+
+Este endpoint permite actualizar la configuración personalizada del usuario autenticado.
+
+### Campos editables:
+- **limite_diario_horas** (obligatorio): Límite máximo de horas que el usuario puede planificar por día.
+  - Valor por defecto: 6.0 horas
+  - Rango válido: 1.0 a 16.0 horas
+  - Validación: El sistema no permitirá valores fuera de este rango.
+
+### Uso recomendado:
+- **4-6 horas**: Jornada estándar de productividad
+- **6-8 horas**: Día completo de estudio/trabajo
+- **8+ horas**: Días de alta demanda (exámenes, proyectos)
+
+### Respuesta exitosa:
+Devuelve el nuevo límite configurado junto con el límite anterior para referencia.''',
+    summary='Actualizar Perfil de Usuario',
+    tags=['Autenticación'],
 )
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
