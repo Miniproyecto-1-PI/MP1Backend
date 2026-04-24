@@ -113,12 +113,16 @@ def actualizar_perfil_view(request):
         usuario=request.user,
         defaults={'limite_diario_horas': 6.0}
     )
+    limite_anterior = float(perfil.limite_diario_horas)
     serializer = PerfilUsuarioSerializer(perfil, data=request.data, partial=True)
     if serializer.is_valid():
         serializer.save()
+        perfil.refresh_from_db()
+        nuevo_limite = float(perfil.limite_diario_horas)
         return Response({
-            'message': 'Perfil actualizado',
-            'limite_diario_horas': float(perfil.limite_diario_horas)
+            'message': f'Tu límite diario se actualizó a {nuevo_limite}h',
+            'limite_diario_horas': nuevo_limite,
+            'limite_anterior': limite_anterior,
         })
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -349,44 +353,61 @@ def verificar_conflicto(request):
     hay_conflicto = horas_con_nueva > limite
 
     # Construir respuesta
+    horas_excedente = float(horas_con_nueva - limite) if hay_conflicto else 0
+    horas_disponibles = max(0, float(limite - horas_actuales))
+
     response_data = {
         'hay_conflicto': hay_conflicto,
         'horas_actuales': float(horas_actuales),
         'horas_con_nueva': float(horas_con_nueva),
+        'horas_excedente': horas_excedente,
+        'horas_disponibles': horas_disponibles,
         'limite': float(limite),
         'fecha': str(fecha),
+        'porcentaje_uso': min(100, round(float(horas_con_nueva / limite) * 100)) if limite > 0 else 100,
     }
 
     if hay_conflicto:
         response_data['mensaje'] = (
-            f"Quedarías con {float(horas_con_nueva)}h planificadas "
-            f"(límite {float(limite)}h)"
+            f"Quedarías con {float(horas_con_nueva)}h planificadas para ese día, "
+            f"pero tu límite es de {float(limite)}h."
+        )
+        response_data['mensaje_corto'] = (
+            f"{float(horas_con_nueva)}h de {float(limite)}h — "
+            f"excedes por {horas_excedente:.1f}h"
         )
         response_data['alternativas'] = [
             {
                 'accion': 'mover',
-                'descripcion': 'Mover a otro día con menos carga',
+                'titulo': 'Elegir otro día',
+                'descripcion': 'Busca un día con menos carga para esta tarea',
                 'icono': 'calendar'
             },
             {
                 'accion': 'reducir',
-                'descripcion': 'Reducir las horas estimadas de esta subtarea',
+                'titulo': 'Dedicarle menos tiempo',
+                'descripcion': f'Ajustar a {horas_disponibles:.1f}h (el espacio que queda)',
                 'icono': 'clock'
             },
             {
                 'accion': 'posponer',
-                'descripcion': 'Posponer para más adelante',
+                'titulo': 'Dejar para mañana',
+                'descripcion': 'Mover automáticamente al día siguiente',
                 'icono': 'arrow-right'
             },
             {
                 'accion': 'forzar',
-                'descripcion': 'Guardar de todos modos (superando el límite)',
+                'titulo': 'Guardar de todos modos',
+                'descripcion': 'Acepto que será un día exigente',
                 'icono': 'alert-triangle'
             },
         ]
     else:
         response_data['mensaje'] = (
-            f"Sin conflicto: {float(horas_con_nueva)}h de {float(limite)}h"
+            f"Todo bien: tendrías {float(horas_con_nueva)}h de {float(limite)}h planificadas"
+        )
+        response_data['mensaje_corto'] = (
+            f"{float(horas_con_nueva)}h de {float(limite)}h — sin conflicto"
         )
 
     return Response(response_data)

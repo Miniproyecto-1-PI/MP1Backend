@@ -91,10 +91,14 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
         fields = ['limite_diario_horas']
 
     def validate_limite_diario_horas(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("El límite debe ser mayor a 0")
-        if value > 24:
-            raise serializers.ValidationError("El límite no puede superar 24 horas")
+        if value < 1:
+            raise serializers.ValidationError(
+                "El mínimo es 1 hora por día. Así te aseguras de avanzar al menos un poco cada día."
+            )
+        if value > 16:
+            raise serializers.ValidationError(
+                "El máximo es 16 horas por día. Recuerda que también necesitas descansar."
+            )
         return value
 
 
