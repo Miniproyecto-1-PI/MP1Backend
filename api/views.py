@@ -6,10 +6,12 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 
 from .models import Actividad, Subtarea, PerfilUsuario
 from .serializers import (
@@ -33,10 +35,17 @@ def test_endpoint(request):
 # Auth Views
 # ──────────────────────────────────────────────
 
+@extend_schema(
+    request=RegistroSerializer,
+    responses={
+        201: OpenApiResponse(description='Usuario creado exitosamente'),
+        400: OpenApiResponse(description='Datos inválidos'),
+    },
+    description='Registrar un nuevo usuario en el sistema.'
+)
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def registro_view(request):
-    """Registrar un nuevo usuario."""
     serializer = RegistroSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
@@ -57,10 +66,17 @@ def registro_view(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(
+    request=LoginSerializer,
+    responses={
+        200: OpenApiResponse(description='Login exitoso'),
+        400: OpenApiResponse(description='Credenciales inválidas'),
+    },
+    description='Iniciar sesión y obtener tokens JWT.'
+)
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login_view(request):
-    """Iniciar sesión y obtener tokens JWT."""
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.validated_data['user']
@@ -88,10 +104,13 @@ def login_view(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(
+    responses={200: UsuarioSerializer},
+    description='Obtener datos del usuario autenticado actual.'
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def me_view(request):
-    """Obtener datos del usuario autenticado."""
     user = request.user
     perfil, _ = PerfilUsuario.objects.get_or_create(
         usuario=user,
@@ -105,10 +124,17 @@ def me_view(request):
     })
 
 
+@extend_schema(
+    request=PerfilUsuarioSerializer,
+    responses={
+        200: OpenApiResponse(description='Perfil actualizado'),
+        400: OpenApiResponse(description='Datos inválidos'),
+    },
+    description='Actualizar configuración del perfil (ej: límite diario de horas).'
+)
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def actualizar_perfil_view(request):
-    """Actualizar configuración del perfil (ej: límite diario)."""
     perfil, _ = PerfilUsuario.objects.get_or_create(
         usuario=request.user,
         defaults={'limite_diario_horas': 6.0}
@@ -131,18 +157,25 @@ def actualizar_perfil_view(request):
 # Actividades — CRUD protegido por usuario
 # ──────────────────────────────────────────────
 
+@extend_schema(
+    summary='CRUD de Actividades',
+    description='Gestionar actividades del usuario. Solo devuelve actividades propias del usuario autenticado.',
+    responses={
+        200: ActividadSerializer(many=True),
+        201: ActividadSerializer,
+        204: None,
+    }
+)
 class ActividadViewSet(viewsets.ModelViewSet):
     serializer_class = ActividadSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        """Solo devuelve las actividades del usuario autenticado."""
         return Actividad.objects.filter(
             usuario=self.request.user
         ).order_by('-created_at')
 
     def perform_create(self, serializer):
-        """Asigna el usuario autenticado al crear una actividad."""
         serializer.save(usuario=self.request.user)
 
 
@@ -150,6 +183,24 @@ class ActividadViewSet(viewsets.ModelViewSet):
 # Subtareas — CRUD protegido por usuario
 # ──────────────────────────────────────────────
 
+@extend_schema(
+    summary='Listar/Crear Subtareas',
+    description='Lista las subtareas de una actividad o crea una nueva.',
+    parameters=[
+        {
+            'name': 'actividad_id',
+            'in': 'path',
+            'required': True,
+            'schema': {'type': 'integer'},
+            'description': 'ID de la actividad padre'
+        }
+    ],
+    responses={
+        200: SubtareaSerializer(many=True),
+        201: SubtareaSerializer,
+        404: OpenApiResponse(description='Actividad no encontrada'),
+    }
+)
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def subtareas_list(request, actividad_id):
@@ -175,6 +226,24 @@ def subtareas_list(request, actividad_id):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(
+    summary='Detalle de Subtarea',
+    description='Obtener, actualizar o eliminar una subtarea específica.',
+    parameters=[
+        {
+            'name': 'pk',
+            'in': 'path',
+            'required': True,
+            'schema': {'type': 'integer'},
+            'description': 'ID de la subtarea'
+        }
+    ],
+    responses={
+        200: SubtareaSerializer,
+        204: None,
+        404: OpenApiResponse(description='Subtarea no encontrada'),
+    }
+)
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def subtarea_detail(request, pk):
@@ -203,22 +272,24 @@ def subtarea_detail(request, pk):
 # Vista HOY — Agrupada (vencidas, hoy, próximas)
 # ──────────────────────────────────────────────
 
+@extend_schema(
+    summary='Actividades de Hoy',
+    description='''Devuelve todas las actividades del usuario agrupadas en:
+- **vencidas**: subtareas con fecha_objetivo < hoy (no completadas)
+- **hoy**: subtareas con fecha_objetivo = hoy
+- **proximas**: subtareas con fecha_objetivo > hoy (próximos 7 días)
+
+Ordenamiento:
+1. Vencidas primero (las más antiguas primero)
+2. Hoy (por horas estimadas desc — prioriza lo más pesado)
+3. Próximas (por fecha_objetivo asc, luego horas desc)''',
+    responses={
+        200: OpenApiResponse(description='Datos del día agrupados'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def actividades_hoy(request):
-    """
-    Devuelve todas las actividades del usuario agrupadas en:
-    - vencidas: subtareas con fecha_objetivo < hoy (no completadas)
-    - hoy: subtareas con fecha_objetivo = hoy
-    - proximas: subtareas con fecha_objetivo > hoy (próximos 7 días)
-
-    Ordenamiento (regla base):
-    1. Vencidas primero (las más antiguas primero)
-    2. Hoy (por horas estimadas desc — prioriza lo más pesado)
-    3. Próximas (por fecha_objetivo asc, luego horas desc)
-
-    Desempate: si misma fecha y mismas horas → orden por título alfabético
-    """
     hoy = timezone.localdate()
     proxima_semana = hoy + timedelta(days=7)
     user = request.user
@@ -300,25 +371,25 @@ def actividades_hoy(request):
 # US-07: Detección de conflicto por sobrecarga
 # ──────────────────────────────────────────────
 
+@extend_schema(
+    summary='Verificar Conflicto de Carga',
+    description='''Verifica si reprogramar una subtarea a una fecha genera conflicto de sobrecarga.
+
+Recibe:
+- fecha: la fecha destino
+- horas_nuevas: horas de la subtarea a mover
+- subtarea_id (opcional): ID de la subtarea que se mueve (para excluirla del cálculo)
+
+Responde con información de conflicto y alternativas.''',
+    request=ConflictoCheckSerializer,
+    responses={
+        200: OpenApiResponse(description='Resultado de la verificación'),
+        400: OpenApiResponse(description='Datos inválidos'),
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def verificar_conflicto(request):
-    """
-    Verifica si reprogramar una subtarea a una fecha genera conflicto de sobrecarga.
-
-    Recibe:
-    - fecha: la fecha destino
-    - horas_nuevas: horas de la subtarea a mover
-    - subtarea_id (opcional): ID de la subtarea que se mueve (para excluirla del cálculo)
-
-    Responde:
-    - hay_conflicto: bool
-    - horas_actuales: horas ya planificadas ese día
-    - horas_con_nueva: horas que quedarían
-    - limite: límite diario del usuario
-    - mensaje: texto descriptivo
-    - alternativas: opciones para resolver el conflicto
-    """
     serializer = ConflictoCheckSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -413,13 +484,16 @@ def verificar_conflicto(request):
     return Response(response_data)
 
 
+@extend_schema(
+    summary='Carga Diaria (Próximos 14 días)',
+    description='Devuelve la carga de horas planificadas por día para los próximos 14 días. Útil para mostrar qué días están más cargados.',
+    responses={
+        200: OpenApiResponse(description='Carga diaria por día'),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def carga_diaria(request):
-    """
-    Devuelve la carga de horas planificadas por día para los próximos 14 días.
-    Útil para mostrar al usuario qué días están más cargados.
-    """
     hoy = timezone.localdate()
     fin = hoy + timedelta(days=14)
 

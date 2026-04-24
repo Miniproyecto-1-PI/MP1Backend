@@ -58,6 +58,7 @@ class Actividad(models.Model):
         default='tarea'
     )
     fecha_entrega = models.DateField()
+    completada = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -128,7 +128,7 @@ class ActividadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Actividad
-        fields = ['id', 'titulo', 'descripcion', 'tipo', 'fecha_entrega', 'subtareas', 'created_at', 'updated_at']
+        fields = ['id', 'titulo', 'descripcion', 'tipo', 'fecha_entrega', 'completada', 'subtareas', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def validate_titulo(self, value):
@@ -175,6 +175,8 @@ class ActividadSerializer(serializers.ModelSerializer):
         instance.descripcion = validated_data.get('descripcion', instance.descripcion)
         instance.tipo = validated_data.get('tipo', instance.tipo)
         instance.fecha_entrega = validated_data.get('fecha_entrega', instance.fecha_entrega)
+        if 'completada' in validated_data:
+            instance.completada = validated_data['completada']
         instance.save()
 
         if subtareas_data is not None:
