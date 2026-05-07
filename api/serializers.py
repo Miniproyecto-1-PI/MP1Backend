@@ -109,7 +109,7 @@ class PerfilUsuarioSerializer(serializers.ModelSerializer):
 class SubtareaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subtarea
-        fields = ['id', 'titulo', 'tipo', 'fecha_objetivo', 'horas_estimadas', 'completada', 'orden', 'created_at']
+        fields = ['id', 'titulo', 'tipo', 'fecha_objetivo', 'horas_estimadas', 'completada', 'estado', 'nota', 'orden', 'created_at']
         read_only_fields = ['id', 'created_at']
 
     def validate_titulo(self, value):
@@ -121,6 +121,29 @@ class SubtareaSerializer(serializers.ModelSerializer):
         if value is None or value <= 0:
             raise serializers.ValidationError("Las horas de la subtarea deben ser mayores a 0")
         return value
+
+
+class SubtareaStatusSerializer(serializers.Serializer):
+    """Serializer para actualizar el estado de una subtarea (US-09)."""
+    status = serializers.ChoiceField(
+        choices=['done', 'postponed'],
+        help_text="Nuevo estado: 'done' (hecha) o 'postponed' (pospuesta)"
+    )
+    note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default='',
+        help_text="Nota opcional (usada al posponer)"
+    )
+
+
+class ActividadProgresoSerializer(serializers.Serializer):
+    """Serializer de respuesta para progreso de actividad (US-10)."""
+    done = serializers.IntegerField(help_text="Subtareas completadas")
+    postponed = serializers.IntegerField(help_text="Subtareas pospuestas")
+    pending = serializers.IntegerField(help_text="Subtareas pendientes")
+    total = serializers.IntegerField(help_text="Total de subtareas")
+    percentage = serializers.FloatField(help_text="Porcentaje de avance (0-100)")
 
 
 class ActividadSerializer(serializers.ModelSerializer):
@@ -196,6 +219,10 @@ class ActividadSerializer(serializers.ModelSerializer):
                             subtarea.horas_estimadas = s_data.get('horas_estimadas')
                         if 'completada' in s_data:
                             subtarea.completada = s_data['completada']
+                        if 'estado' in s_data:
+                            subtarea.estado = s_data['estado']
+                        if 'nota' in s_data:
+                            subtarea.nota = s_data['nota']
                         subtarea.orden = idx
                         subtarea.save()
                         keep_subtareas_ids.append(subtarea.id)
@@ -209,6 +236,8 @@ class ActividadSerializer(serializers.ModelSerializer):
                         fecha_objetivo=s_data.get('fecha_objetivo'),
                         horas_estimadas=s_data.get('horas_estimadas'),
                         completada=s_data.get('completada', False),
+                        estado=s_data.get('estado', 'pendiente'),
+                        nota=s_data.get('nota', ''),
                         orden=idx
                     )
                     keep_subtareas_ids.append(new_subtarea.id)

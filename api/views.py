@@ -10,8 +10,9 @@ from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
+from rest_framework.serializers import Serializer, CharField, FloatField
 from rest_framework_simplejwt.tokens import RefreshToken
-from drf_spectacular.utils import extend_schema, OpenApiResponse
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, inline_serializer
 
 from .models import Actividad, Subtarea, PerfilUsuario
 from .serializers import (
@@ -22,6 +23,8 @@ from .serializers import (
     UsuarioSerializer,
     PerfilUsuarioSerializer,
     ConflictoCheckSerializer,
+    SubtareaStatusSerializer,
+    ActividadProgresoSerializer,
 )
 
 
@@ -127,8 +130,13 @@ def me_view(request):
 @extend_schema(
     request=PerfilUsuarioSerializer,
     responses={
-        200: OpenApiResponse(
-            description='Perfil actualizado exitosamente',
+        200: inline_serializer(
+            name='PerfilResponse',
+            fields={
+                'message': CharField(),
+                'limite_diario_horas': FloatField(),
+                'limite_anterior': FloatField(),
+            },
         ),
         400: OpenApiResponse(
             description='Datos inválidos - el límite debe estar entre 1 y 16 horas',
@@ -154,6 +162,17 @@ Este endpoint permite actualizar la configuración personalizada del usuario aut
 Devuelve el nuevo límite configurado junto con el límite anterior para referencia.''',
     summary='Actualizar Perfil de Usuario',
     tags=['Autenticación'],
+    examples=[
+        OpenApiExample(
+            name='Respuesta exitosa',
+            description='Ejemplo de respuesta cuando el límite se actualiza correctamente',
+            value={
+                "message": "Tu límite diario se actualizó a 4.0h",
+                "limite_diario_horas": 4.0,
+                "limite_anterior": 12.0
+            },
+        ),
+    ]
 )
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
@@ -348,6 +367,8 @@ def actividades_hoy(request):
             'fecha_objetivo': subtarea.fecha_objetivo,
             'horas_estimadas': float(subtarea.horas_estimadas) if subtarea.horas_estimadas else 0,
             'completada': subtarea.completada,
+            'estado': subtarea.estado,
+            'nota': subtarea.nota,
             'orden': subtarea.orden,
             'actividad': {
                 'id': subtarea.actividad.id,
@@ -552,4 +573,180 @@ def carga_diaria(request):
     return Response({
         'limite_diario': float(perfil.limite_diario_horas),
         'dias': dias
+    })
+
+
+# ──────────────────────────────────────────────
+# US-09: Registrar avance de subtarea
+# ──────────────────────────────────────────────
+
+@extend_schema(
+    summary='Actualizar Estado de Subtarea',
+    description='''## Registrar avance de una subtarea (US-09)
+
+Permite marcar una subtarea como **hecha** o **pospuesta**, con una nota opcional.
+
+### Estados válidos:
+- `"done"` → La subtarea se marca como hecha (completada = true)
+- `"postponed"` → La subtarea se marca como pospuesta (completada = false)
+
+### Nota opcional:
+Se puede incluir una nota al posponer. La nota se guarda junto con el estado.
+
+### Ejemplo de uso:
+```json
+{ "status": "done" }
+```
+
+```json
+{ "status": "postponed", "note": "Falta revisar el último capítulo" }
+```''',
+    request=SubtareaStatusSerializer,
+    responses={
+        200: SubtareaSerializer,
+        400: OpenApiResponse(description='Estado inválido — debe ser "done" o "postponed"'),
+        404: OpenApiResponse(description='Subtarea no encontrada o no pertenece al usuario'),
+    },
+    tags=['Subtareas'],
+    examples=[
+        OpenApiExample(
+            name='Marcar como hecha',
+            description='Marcar una subtarea como completada',
+            value={"status": "done"},
+            request_only=True,
+        ),
+        OpenApiExample(
+            name='Posponer con nota',
+            description='Posponer una subtarea con una nota opcional',
+            value={"status": "postponed", "note": "Falta revisar el último capítulo"},
+            request_only=True,
+        ),
+        OpenApiExample(
+            name='Respuesta exitosa',
+            description='Subtarea actualizada',
+            value={
+                "id": 1,
+                "titulo": "Leer capítulo 5",
+                "tipo": "estudio",
+                "fecha_objetivo": "2026-05-07",
+                "horas_estimadas": 2.0,
+                "completada": True,
+                "estado": "hecha",
+                "nota": "",
+                "orden": 0,
+                "created_at": "2026-05-01T10:00:00Z"
+            },
+            response_only=True,
+        ),
+    ]
+)
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def subtarea_update_status(request, pk):
+    try:
+        subtarea = Subtarea.objects.get(pk=pk, actividad__usuario=request.user)
+    except Subtarea.DoesNotExist:
+        return Response(
+            {"detail": "Subtarea no encontrada"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    serializer = SubtareaStatusSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    new_status = serializer.validated_data['status']
+    note = serializer.validated_data.get('note', '')
+
+    if new_status == 'done':
+        subtarea.estado = 'hecha'
+        subtarea.completada = True
+        subtarea.nota = note
+    elif new_status == 'postponed':
+        subtarea.estado = 'pospuesta'
+        subtarea.completada = False
+        subtarea.nota = note
+
+    try:
+        subtarea.save()
+    except Exception:
+        return Response(
+            {"detail": "Error interno al guardar el estado"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    return Response(SubtareaSerializer(subtarea).data)
+
+
+# ──────────────────────────────────────────────
+# US-10: Progreso por actividad
+# ──────────────────────────────────────────────
+
+@extend_schema(
+    summary='Progreso de Actividad',
+    description='''## Ver progreso por actividad (US-10)
+
+Calcula el progreso de una actividad basándose en los estados de sus subtareas.
+
+### Cálculo:
+- **done**: Subtareas con estado "hecha"
+- **postponed**: Subtareas con estado "pospuesta"
+- **pending**: Subtareas con estado "pendiente"
+- **total**: Número total de subtareas
+- **percentage**: `(done / total) * 100`, redondeado a 1 decimal
+
+### Ejemplo de respuesta:
+```json
+{
+  "done": 3,
+  "postponed": 1,
+  "pending": 2,
+  "total": 6,
+  "percentage": 50.0
+}
+```''',
+    responses={
+        200: ActividadProgresoSerializer,
+        404: OpenApiResponse(description='Actividad no encontrada o no pertenece al usuario'),
+    },
+    tags=['Actividades'],
+    examples=[
+        OpenApiExample(
+            name='Progreso parcial',
+            description='Actividad con progreso parcial',
+            value={
+                "done": 3,
+                "postponed": 1,
+                "pending": 2,
+                "total": 6,
+                "percentage": 50.0
+            },
+            response_only=True,
+        ),
+    ]
+)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def actividad_progreso(request, actividad_id):
+    try:
+        actividad = Actividad.objects.get(pk=actividad_id, usuario=request.user)
+    except Actividad.DoesNotExist:
+        return Response(
+            {"detail": "Actividad no encontrada"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    subtareas = actividad.subtareas.all()
+    total = subtareas.count()
+    done = subtareas.filter(estado='hecha').count()
+    postponed = subtareas.filter(estado='pospuesta').count()
+    pending = subtareas.filter(estado='pendiente').count()
+    percentage = round((done / total) * 100, 1) if total > 0 else 0
+
+    return Response({
+        'done': done,
+        'postponed': postponed,
+        'pending': pending,
+        'total': total,
+        'percentage': percentage,
     })

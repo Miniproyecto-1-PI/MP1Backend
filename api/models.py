@@ -41,6 +41,12 @@ TIPO_SUBTAREA_CHOICES = [
     ('otro', 'Otro'),
 ]
 
+ESTADO_SUBTAREA_CHOICES = [
+    ('pendiente', 'Pendiente'),
+    ('hecha', 'Hecha'),
+    ('pospuesta', 'Pospuesta'),
+]
+
 
 class Actividad(models.Model):
     usuario = models.ForeignKey(
@@ -81,6 +87,17 @@ class Subtarea(models.Model):
     fecha_objetivo = models.DateField(null=True, blank=True)
     horas_estimadas = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     completada = models.BooleanField(default=False)
+    estado = models.CharField(
+        max_length=20,
+        choices=ESTADO_SUBTAREA_CHOICES,
+        default='pendiente',
+        help_text="Estado actual de la subtarea: pendiente, hecha o pospuesta"
+    )
+    nota = models.TextField(
+        blank=True,
+        default='',
+        help_text="Nota opcional (usada principalmente al posponer)"
+    )
     orden = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 

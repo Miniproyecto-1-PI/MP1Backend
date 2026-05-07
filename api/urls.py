@@ -5,7 +5,9 @@ from .views import (
     ActividadViewSet,
     subtareas_list,
     subtarea_detail,
+    subtarea_update_status,
     actividades_hoy,
+    actividad_progreso,
     registro_view,
     login_view,
     me_view,
@@ -32,6 +34,10 @@ urlpatterns = [
     # Subtareas
     path('actividades/<int:actividad_id>/subtareas/', subtareas_list, name='subtareas-list'),
     path('subtareas/<int:pk>/', subtarea_detail, name='subtarea-detail'),
+    path('subtareas/<int:pk>/status/', subtarea_update_status, name='subtarea-update-status'),
+
+    # Progreso por actividad (US-10)
+    path('actividades/<int:actividad_id>/progreso/', actividad_progreso, name='actividad-progreso'),
 
     # Conflicto de sobrecarga
     path('conflicto/verificar/', verificar_conflicto, name='verificar-conflicto'),
