@@ -406,6 +406,7 @@ def actividades_hoy(request):
         'vencidas': [serialize_subtarea_con_actividad(s) for s in vencidas],
         'hoy': [serialize_subtarea_con_actividad(s) for s in de_hoy],
         'proximas': [serialize_subtarea_con_actividad(s) for s in proximas],
+        'todas': [serialize_subtarea_con_actividad(s) for s in subtareas_qs.order_by('-id')],
         'actividades_hoy': actividades_serializer.data,
         'actividades_sin_planificar': actividades_sin_planificar_serializer.data,
     })
@@ -664,6 +665,10 @@ def subtarea_update_status(request, pk):
         subtarea.nota = note
     elif new_status == 'postponed':
         subtarea.estado = 'pospuesta'
+        subtarea.completada = False
+        subtarea.nota = note
+    elif new_status == 'pending':
+        subtarea.estado = 'pendiente'
         subtarea.completada = False
         subtarea.nota = note
 

@@ -126,8 +126,8 @@ class SubtareaSerializer(serializers.ModelSerializer):
 class SubtareaStatusSerializer(serializers.Serializer):
     """Serializer para actualizar el estado de una subtarea (US-09)."""
     status = serializers.ChoiceField(
-        choices=['done', 'postponed'],
-        help_text="Nuevo estado: 'done' (hecha) o 'postponed' (pospuesta)"
+        choices=['done', 'postponed', 'pending'],
+        help_text="Nuevo estado: 'done' (hecha), 'postponed' (pospuesta), o 'pending' (pendiente)"
     )
     note = serializers.CharField(
         required=False,
